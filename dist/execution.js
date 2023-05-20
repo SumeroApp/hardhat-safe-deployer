@@ -21,7 +21,7 @@ exports.EIP712_SAFE_TX_TYPE = {
 const signHash = async (signer, hash) => {
     const typedDataHash = ethers_1.utils.arrayify(hash);
     return {
-        signer: signer.address,
+        signer: await signer.getAddress(),
         data: (await signer.signMessage(typedDataHash)).replace(/1b$/, "1f").replace(/1c$/, "20")
     };
 };

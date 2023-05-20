@@ -1,24 +1,27 @@
-import { EthereumProvider, JsonRpcRequest, JsonRpcResponse, RequestArguments } from "hardhat/types";
-import { utils, Contract } from "ethers";
+import { EthereumProvider, JsonRpcRequest, JsonRpcResponse, RequestArguments, HardhatRuntimeEnvironment } from "hardhat/types";
+import { utils, Contract, providers } from "ethers";
 import { buildSafeTransaction, EIP712_SAFE_TX_TYPE, SafeSignature, SafeTransaction, signHash } from "./execution"
 import { Wallet } from "@ethersproject/wallet";
+import { Network, getNetwork } from "@ethersproject/networks";
 import axios from "axios"
 
 export class SafeProviderAdapter implements EthereumProvider {
 
     submittedTxs = new Map<string, any>();
 
-    createLibAddress = "0x8538FcBccba7f5303d2C679Fa5d7A629A8c9bf4A"
+    createLibAddress = "0x7cbB62EaA69F79e6873cD1ecB2392971036cFAa4"
     createLibInterface = new utils.Interface(["function performCreate(uint256,bytes)"])
     safeInterface = new utils.Interface(["function nonce() view returns(uint256)"])
     safeContract: Contract
     safe: string
     serviceUrl: string
-    signer: Wallet
+    signer: Wallet | providers.JsonRpcSigner
     wrapped: any
-    constructor(wrapped: any, signer: Wallet, safe: string, serviceUrl?: string) {
-        this.wrapped = wrapped
-        this.signer = signer
+    chainId: number | undefined
+    constructor(hre: HardhatRuntimeEnvironment, safe: string, serviceUrl: string, signer?: Wallet) {
+        this.wrapped = hre.network.provider
+        if(!signer) this.signer = hre.ethers.provider.getSigner(0)
+        else this.signer = signer;
         this.safe = utils.getAddress(safe)
         this.serviceUrl = serviceUrl ?? "https://safe-transaction.rinkeby.gnosis.io"
         this.safeContract = new Contract(safe, this.safeInterface, this.signer)
@@ -53,6 +56,9 @@ export class SafeProviderAdapter implements EthereumProvider {
     }
 
     async request(args: RequestArguments): Promise<unknown> {
+        if(!this.chainId) {
+            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId',params: []}), 16);
+        }
         if (args.method === 'eth_sendTransaction' && args.params && (args.params as any)[0].from?.toLowerCase() === this.safe.toLowerCase()) {
             const tx = (args.params as any)[0]
             let operation = 0
@@ -73,7 +79,7 @@ export class SafeProviderAdapter implements EthereumProvider {
             })
             const estimation = await this.estimateSafeTx(this.safe, safeTx)
             safeTx.safeTxGas = estimation.safeTxGas
-            const safeTxHash = utils._TypedDataEncoder.hash({ verifyingContract: this.safe }, EIP712_SAFE_TX_TYPE, safeTx)
+            const safeTxHash = utils._TypedDataEncoder.hash({ chainId: this.chainId, verifyingContract: this.safe, }, EIP712_SAFE_TX_TYPE, safeTx)
             const signature = await signHash(this.signer, safeTxHash)
             await this.proposeTx(safeTxHash, safeTx, signature)
             this.submittedTxs.set(safeTxHash, {
@@ -113,9 +119,9 @@ export class SafeProviderAdapter implements EthereumProvider {
                 return resp
             }
         }
-        const result = await this.wrapped.request(args)
+        let result = await this.wrapped.request(args)
         if (args.method === 'eth_accounts') {
-            result.push(this.safe)
+            result = [this.safe, ...result]
         }
         return result
     }
@@ -166,5 +172,11 @@ export class SafeProviderAdapter implements EthereumProvider {
     }
     async send(method: string, params: any): Promise<any> {
         return await this.request({ method, params })
+    }
+    async getNetwork(): Promise<Network>{
+        if(!this.chainId) {
+            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId',params: []}), 16);
+        }
+        return getNetwork(this.chainId)
     }
 }

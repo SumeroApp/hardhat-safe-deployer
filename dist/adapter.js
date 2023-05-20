@@ -6,15 +6,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SafeProviderAdapter = void 0;
 const ethers_1 = require("ethers");
 const execution_1 = require("./execution");
+const networks_1 = require("@ethersproject/networks");
 const axios_1 = __importDefault(require("axios"));
 class SafeProviderAdapter {
-    constructor(wrapped, signer, safe, serviceUrl) {
+    constructor(hre, safe, serviceUrl, signer) {
         this.submittedTxs = new Map();
         this.createLibAddress = "0x7cbB62EaA69F79e6873cD1ecB2392971036cFAa4";
         this.createLibInterface = new ethers_1.utils.Interface(["function performCreate(uint256,bytes)"]);
         this.safeInterface = new ethers_1.utils.Interface(["function nonce() view returns(uint256)"]);
-        this.wrapped = wrapped;
-        this.signer = signer;
+        this.wrapped = hre.network.provider;
+        if (!signer)
+            this.signer = hre.ethers.provider.getSigner(0);
+        else
+            this.signer = signer;
         this.safe = ethers_1.utils.getAddress(safe);
         this.serviceUrl = serviceUrl !== null && serviceUrl !== void 0 ? serviceUrl : "https://safe-transaction.rinkeby.gnosis.io";
         this.safeContract = new ethers_1.Contract(safe, this.safeInterface, this.signer);
@@ -40,6 +44,9 @@ class SafeProviderAdapter {
     }
     async request(args) {
         var _a;
+        if (!this.chainId) {
+            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId', params: [] }), 16);
+        }
         if (args.method === 'eth_sendTransaction' && args.params && ((_a = args.params[0].from) === null || _a === void 0 ? void 0 : _a.toLowerCase()) === this.safe.toLowerCase()) {
             const tx = args.params[0];
             let operation = 0;
@@ -60,7 +67,7 @@ class SafeProviderAdapter {
             });
             const estimation = await this.estimateSafeTx(this.safe, safeTx);
             safeTx.safeTxGas = estimation.safeTxGas;
-            const safeTxHash = ethers_1.utils._TypedDataEncoder.hash({ verifyingContract: this.safe }, execution_1.EIP712_SAFE_TX_TYPE, safeTx);
+            const safeTxHash = ethers_1.utils._TypedDataEncoder.hash({ chainId: this.chainId, verifyingContract: this.safe, }, execution_1.EIP712_SAFE_TX_TYPE, safeTx);
             const signature = await execution_1.signHash(this.signer, safeTxHash);
             await this.proposeTx(safeTxHash, safeTx, signature);
             this.submittedTxs.set(safeTxHash, {
@@ -104,9 +111,9 @@ class SafeProviderAdapter {
                 return resp;
             }
         }
-        const result = await this.wrapped.request(args);
+        let result = await this.wrapped.request(args);
         if (args.method === 'eth_accounts') {
-            result.push(this.safe);
+            result = [this.safe, ...result];
         }
         return result;
     }
@@ -157,6 +164,12 @@ class SafeProviderAdapter {
     }
     async send(method, params) {
         return await this.request({ method, params });
+    }
+    async getNetwork() {
+        if (!this.chainId) {
+            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId', params: [] }), 16);
+        }
+        return networks_1.getNetwork(this.chainId);
     }
 }
 exports.SafeProviderAdapter = SafeProviderAdapter;

@@ -1,4 +1,4 @@
-import { Wallet, BigNumber } from "ethers";
+import { Wallet, BigNumber, providers } from "ethers";
 export declare const EIP712_SAFE_TX_TYPE: {
     SafeTx: {
         type: string;
@@ -23,7 +23,7 @@ export interface SafeSignature {
     signer: string;
     data: string;
 }
-export declare const signHash: (signer: Wallet, hash: string) => Promise<SafeSignature>;
+export declare const signHash: (signer: Wallet | providers.JsonRpcSigner, hash: string) => Promise<SafeSignature>;
 export declare const buildSafeTransaction: (template: {
     to: string;
     value?: BigNumber | number | string;
