@@ -20,7 +20,7 @@ export class SafeProviderAdapter implements EthereumProvider {
     chainId: number | undefined
     constructor(hre: HardhatRuntimeEnvironment, safe: string, serviceUrl: string, signer?: Wallet) {
         this.wrapped = hre.network.provider
-        if(!signer) this.signer = hre.ethers.provider.getSigner(0)
+        if (!signer) this.signer = hre.ethers.provider.getSigner(0)
         else this.signer = signer;
         this.safe = utils.getAddress(safe)
         this.serviceUrl = serviceUrl ?? "https://safe-transaction.rinkeby.gnosis.io"
@@ -56,8 +56,8 @@ export class SafeProviderAdapter implements EthereumProvider {
     }
 
     async request(args: RequestArguments): Promise<unknown> {
-        if(!this.chainId) {
-            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId',params: []}), 16);
+        if (!this.chainId) {
+            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId', params: [] }), 16);
         }
         if (args.method === 'eth_sendTransaction' && args.params && (args.params as any)[0].from?.toLowerCase() === this.safe.toLowerCase()) {
             const tx = (args.params as any)[0]
@@ -68,7 +68,7 @@ export class SafeProviderAdapter implements EthereumProvider {
                 tx.value = 0
                 operation = 1
             }
-            const nonce = (await this.safeContract.nonce()).toNumber()
+            const nonce = process.env.CUSTOM_NONCE ? Number(process.env.CUSTOM_NONCE) : (await this.safeContract.nonce()).toNumber()
             const safeTx = buildSafeTransaction({
                 to: utils.getAddress(tx.to),
                 data: tx.data,
@@ -173,9 +173,9 @@ export class SafeProviderAdapter implements EthereumProvider {
     async send(method: string, params: any): Promise<any> {
         return await this.request({ method, params })
     }
-    async getNetwork(): Promise<Network>{
-        if(!this.chainId) {
-            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId',params: []}), 16);
+    async getNetwork(): Promise<Network> {
+        if (!this.chainId) {
+            this.chainId = parseInt(await this.wrapped.request({ method: 'eth_chainId', params: [] }), 16);
         }
         return getNetwork(this.chainId)
     }
